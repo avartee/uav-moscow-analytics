@@ -2,36 +2,89 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Сводка ГШ: БПЛА</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>СВОДКА ГШ: Аналитика атак БПЛА</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        .past-hit { background-color: #ef4444; width: 12px; height: 12px; border-radius: 50%; }
-        .new-hit { background-color: #3b82f6; width: 16px; height: 16px; border-radius: 50%; box-shadow: 0 0 10px #3b82f6; }
+        body { background-color: #0f172a; color: #cbd5e1; }
+        .map-container { min-height: 550px; z-index: 10; border: 1px solid #334155; }
+        .past-hit { background-color: #ef4444; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #0f172a; box-shadow: 0 0 5px rgba(239, 68, 68, 0.8); }
+        .pulse-warn { background-color: #f59e0b; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #0f172a; box-shadow: 0 0 10px rgba(245, 158, 11, 0.8); animation: pulse-orange 2s infinite; }
+        .new-hit { background-color: #3b82f6; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #0f172a; box-shadow: 0 0 12px rgba(59, 130, 246, 0.9); animation: pulse-blue 1.5s infinite; }
+        @keyframes pulse-orange { 0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); } 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); } }
+        @keyframes pulse-blue { 0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.8); } 70% { box-shadow: 0 0 0 12px rgba(59, 130, 246, 0); } 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); } }
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
     </style>
 </head>
-<body class="bg-slate-900 text-white p-4">
-    <div id="new-list" class="mb-4 space-y-2"></div>
-    <div id="map" class="h-[600px] w-full rounded"></div>
-    <script>
-        var map = L.map('map').setView([55.50, 37.80], 9);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+<body class="font-sans antialiased">
+<div class="max-w-7xl mx-auto px-4 py-8">
+    <div id="new-alerts-banner" class="hidden mb-8 bg-blue-900/30 border border-blue-500/50 rounded-lg p-5 shadow-[0_0_15px_rgba(59,130,246,0.2)]">
+        <h2 class="text-lg font-bold text-blue-400 mb-3">НОВОЕ ЗА СУТКИ (БПЛА/РАКЕТЫ/ПВО)</h2>
+        <ul id="new-alerts-list" class="space-y-3 text-sm text-slate-300"></ul>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2">
+            <div id="map" class="map-container rounded bg-slate-900"></div>
+        </div>
+        <div class="bg-slate-800 rounded-lg p-5 border border-slate-700 overflow-y-auto custom-scroll" style="max-height: 550px;">
+            <h3 class="text-lg font-bold mb-3 text-orange-400">ИИ-Прогноз целей (Топ-30)</h3>
+            <ol id="forecast-list" class="space-y-3 text-sm pr-2"></ol>
+        </div>
+    </div>
+</div>
 
-        fetch('./data.json?' + new Date().getTime()).then(r => r.json()).then(data => {
-            const now = new Date();
-            data.pastIncidents.forEach(p => {
-                const added = p.added_at ? new Date(p.added_at) : new Date(0);
-                const isNew = (now - added) < (24 * 60 * 60 * 1000); // Меньше суток
-                
-                const icon = L.divIcon({className: isNew ? 'new-hit' : 'past-hit', iconSize: [16,16]});
-                L.marker(p.coords, {icon: icon}).bindTooltip(p.name).addTo(map);
+<script>
+    const FALLBACK_DATA = {
+        "pastIncidents": [{"name": "Склад WB", "coords": [55.321, 37.545], "details": "Удар БПЛА по складу", "added_at": "2026-07-20T10:00:00Z"}],
+        "forecastTargets": [
+            {"name": "ЛПДС «Володарская»", "desc": "Критический узел авиатоплива (ЮВ).", "coords": [55.498, 37.944]},
+            {"name": "Ж/Д узел Бекасово", "desc": "Крупнейший ж/д узел на Юго-Западе.", "coords": [55.425, 36.836]},
+            {"name": "ТЛЦ Белый Раст", "desc": "Крупный контейнерный хаб (Север).", "coords": [56.136, 37.472]},
+            {"name": "ИП Софьино", "desc": "Логопарк (Раменский г.о., Юго-Восток).", "coords": [55.495, 38.148]},
+            {"name": "Аэродром Чкаловский", "desc": "Военная логистика, спецборты.", "coords": [55.880, 38.055]}
+        ]
+    };
 
-                if(isNew) {
-                    document.getElementById('new-list').innerHTML += `<div class="bg-blue-900 p-2 rounded">НОВОЕ: ${p.name} - ${p.details}</div>`;
-                }
-            });
+    var map = L.map('map').setView([55.50, 37.80], 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    function initMap(data) {
+        const now = new Date();
+        const keywords = ['бпла', 'дрон', 'ракета', 'пво', 'удар'];
+        
+        data.pastIncidents.forEach(p => {
+            const addedTime = p.added_at ? new Date(p.added_at) : new Date(0);
+            const isRecent = (now - addedTime) <= 86400000;
+            const textContent = (p.name + " " + (p.details || "")).toLowerCase();
+            const isRelevant = keywords.some(word => textContent.includes(word));
+            
+            const isNew = isRecent && isRelevant;
+            
+            const icon = L.divIcon({className: isNew ? 'new-hit' : 'past-hit', iconSize: [16,16], iconAnchor: [8,8]});
+            L.marker(p.coords, {icon: icon}).bindTooltip(p.name).addTo(map);
+            
+            if(isNew) {
+                document.getElementById('new-alerts-banner').classList.remove('hidden');
+                document.getElementById('new-alerts-list').innerHTML += `<li><strong>${p.name}:</strong> ${p.details}</li>`;
+            }
         });
-    </script>
+        
+        const fList = document.getElementById('forecast-list');
+        data.forecastTargets.forEach((f, i) => {
+            L.marker(f.coords, {icon: L.divIcon({className: 'pulse-warn', iconSize: [14,14], iconAnchor: [7,7]})}).bindTooltip(f.name).addTo(map);
+            fList.innerHTML += `<li class="p-2 bg-slate-700/50 rounded border-l-2 border-orange-500 text-xs">${i+1}. ${f.name}<br><span class="text-slate-400">${f.desc}</span></li>`;
+        });
+    }
+
+    fetch('data.json').then(r => r.json()).then(d => initMap(d)).catch(e => {
+        console.warn("Fetch failed, using fallback data");
+        initMap(FALLBACK_DATA);
+    });
+</script>
 </body>
 </html>
