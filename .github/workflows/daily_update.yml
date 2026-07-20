@@ -1,38 +1,38 @@
 name: Утренняя ИИ-Сводка БПЛА
 
 on:
-schedule:
-# 06:00 UTC = 09:00 по Москве (К 06:30 сайт точно обновится)
-- cron: '0 6 * * *'
-workflow_dispatch: # Кнопка для ручного запуска теста
+  schedule:
+    # 03:00 UTC = 06:00 по Москве (К 06:30 сайт точно обновится)
+    - cron: '0 3 * * *'
+  workflow_dispatch: # Кнопка для ручного запуска теста
 
 jobs:
-update-dashboard:
-runs-on: ubuntu-latest
-permissions:
-contents: write # Даем права боту на сохранение файла
+  update-dashboard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Даем права боту на сохранение файла
+    steps:
+      - name: Скачивание репозитория
+        uses: actions/checkout@v3
 
-steps:
-  - name: Скачивание репозитория
-    uses: actions/checkout@v3
+      - name: Установка Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-  - name: Установка Python
-    uses: actions/setup-python@v4
-    with:
-      python-version: '3.10'
+      - name: Установка библиотек
+        run: pip install google-generativeai feedparser
 
-  - name: Установка библиотек
-    run: pip install google-generativeai feedparser
+      - name: Запуск ИИ-Аналитика
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python update_data.py
 
-  - name: Запуск ИИ-Аналитика
-    env:
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-    run: python update_data.py
-
-  - name: Сохранение новых данных на сайт
-    run: |
-      git config --global user.name 'AI Intelligence Bot'
-      git config --global user.email 'bot@intel.local'
-      git add data.json
-      git diff --quiet && git diff --staged --quiet || git commit -m "Утренняя сводка: Обновление целей и инцидентов"
-      git push
+      - name: Сохранение новых данных на сайт
+        run: |
+          git config --global user.name 'AI Intelligence Bot'
+          git config --global user.email 'bot@intel.local'
+          git add data.json
+          git diff --quiet && git diff --staged --quiet || git commit -m "Утренняя сводка: Обновление целей и инцидентов"
+          git push
+```
