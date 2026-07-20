@@ -6,60 +6,87 @@
     <title>СВОДКА ГШ: Аналитика атак БПЛА</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         body { background-color: #0f172a; color: #cbd5e1; }
-        .map-container { min-height: 600px; border: 1px solid #334155; }
-        .past-hit { background-color: #ef4444; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; }
-        .new-hit { background-color: #3b82f6; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fff; }
-        .future-hit { background-color: #f59e0b; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; }
+        .map-container { min-height: 550px; z-index: 10; border: 1px solid #334155; }
+        .past-hit { background-color: #ef4444; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #0f172a; box-shadow: 0 0 5px rgba(239, 68, 68, 0.8); }
+        .new-hit { background-color: #3b82f6; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #0f172a; box-shadow: 0 0 12px rgba(59, 130, 246, 0.9); animation: pulse-blue 1.5s infinite; }
+        .future-hit { background-color: #f59e0b; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #0f172a; box-shadow: 0 0 10px rgba(245, 158, 11, 0.8); }
+        @keyframes pulse-blue { 0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.8); } 70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); } 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); } }
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
     </style>
 </head>
 <body class="font-sans antialiased p-4">
-<div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <div class="lg:col-span-2">
-        <div id="map" class="map-container rounded bg-slate-900"></div>
+    <div class="max-w-7xl mx-auto">
+        <!-- Блок новых событий (появляется только если есть свежие) -->
+        <div id="new-alerts-banner" class="hidden mb-6 bg-blue-900/20 border border-blue-500/30 rounded-lg p-5">
+            <h2 class="text-lg font-bold text-blue-400 mb-3 flex items-center">
+                <i class="fa-solid fa-bell mr-2 animate-pulse"></i> СВЕЖИЕ УДАРЫ (24 ЧАСА)
+            </h2>
+            <ul id="new-alerts-list" class="space-y-2 text-sm text-slate-200"></ul>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2">
+                <div id="map" class="map-container rounded bg-slate-900"></div>
+            </div>
+            <div class="bg-slate-800 rounded-lg p-5 border border-slate-700 overflow-y-auto custom-scroll" style="max-height: 600px;">
+                <h3 class="text-lg font-bold mb-4 text-orange-400">Прогнозируемые цели (Топ-30)</h3>
+                <ol id="forecast-list" class="space-y-3 text-sm pr-2"></ol>
+            </div>
+        </div>
     </div>
-    <div class="bg-slate-800 rounded-lg p-5 border border-slate-700 h-[600px] overflow-y-auto">
-        <h3 class="text-lg font-bold mb-4 text-white">Статус инцидентов (с 01.05.2026)</h3>
-        <div id="incident-list" class="space-y-3"></div>
-    </div>
-</div>
 
 <script>
+    // Резервные данные, если data.json не загрузится
+    const FALLBACK_DATA = {
+        "pastIncidents": [
+            { "name": "Инцидент Химки", "date": "2026-05-17", "coords": [55.918, 37.433], "details": "Разведка/падение обломков" },
+            { "name": "Склад WB (Подольск)", "date": "2026-07-20", "coords": [55.321, 37.545], "added_at": "2026-07-20T10:00:00Z", "details": "Удар БПЛА" }
+        ],
+        "forecastTargets": [{"name": "ЛПДС «Володарская»", "desc": "Авиатопливо", "coords": [55.498, 37.944]}]
+    };
+
     const map = L.map('map').setView([55.50, 37.70], 9);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    const today = new Date("2026-07-20T16:58:00Z");
-    const dayAgo = new Date(today - 24 * 60 * 60 * 1000);
-
-    // Данные для примера
-    const incidents = [
-        { name: "Инцидент Химки", date: "2026-05-17T12:00:00Z", coords: [55.918, 37.433] },
-        { name: "Свежий удар Подольск", date: "2026-07-20T10:00:00Z", coords: [55.321, 37.545] }
-    ];
-
-    const listContainer = document.getElementById('incident-list');
-
-    incidents.forEach(inc => {
-        const eventDate = new Date(inc.date);
-        let className = 'past-hit';
-        let borderColor = 'border-red-500';
-
-        if (eventDate > dayAgo && eventDate <= today) {
-            className = 'new-hit';
-            borderColor = 'border-blue-500';
-        }
-
-        if (eventDate >= new Date("2026-05-01")) {
-            L.marker(inc.coords, {icon: L.divIcon({className: className})})
-             .bindTooltip(inc.name).addTo(map);
+    function initMap(data) {
+        const now = new Date();
+        const ONE_DAY = 24 * 60 * 60 * 1000;
+        
+        // 1. Отрисовка Past Incidents (Красный или Синий)
+        data.pastIncidents.forEach(p => {
+            const addedTime = p.added_at ? new Date(p.added_at) : new Date(0);
+            const isNew = (now - addedTime) <= ONE_DAY;
             
-            listContainer.innerHTML += `<div class="p-3 bg-slate-900 border-l-4 ${borderColor} rounded text-sm">
-                <strong>${inc.name}</strong><br>Дата: ${inc.date.split('T')[0]}
-            </div>`;
-        }
-    });
+            // Фильтр: только с 01.05.2026
+            if (new Date(p.date || p.added_at) >= new Date("2026-05-01")) {
+                const className = isNew ? 'new-hit' : 'past-hit';
+                L.marker(p.coords, {icon: L.divIcon({className: className, iconSize: [16,16]})})
+                 .bindTooltip(p.name).addTo(map);
+                
+                // Добавляем в топ, если свежий
+                if(isNew) {
+                    document.getElementById('new-alerts-banner').classList.remove('hidden');
+                    document.getElementById('new-alerts-list').innerHTML += `<li><span class="font-bold text-white">${p.name}:</span> ${p.details}</li>`;
+                }
+            }
+        });
+        
+        // 2. Отрисовка Forecast Targets (Оранжевый)
+        const fList = document.getElementById('forecast-list');
+        data.forecastTargets.forEach((f, i) => {
+            L.marker(f.coords, {icon: L.divIcon({className: 'future-hit', iconSize: [14,14]})}).bindTooltip(f.name).addTo(map);
+            fList.innerHTML += `<li class="p-2 bg-slate-700/30 rounded border-l-2 border-orange-500">${i+1}. <strong>${f.name}</strong><br><span class="text-xs text-slate-400">${f.desc}</span></li>`;
+        });
+    }
+
+    // Загрузка данных
+    fetch('data.json').then(r => r.json()).then(initMap).catch(() => initMap(FALLBACK_DATA));
 </script>
 </body>
 </html>
