@@ -2,8 +2,8 @@ name: Утренняя ИИ-Сводка БПЛА
 
 on:
   schedule:
-    # 03:00 UTC = 06:00 по Москве (К 06:30 сайт точно обновится)
-    - cron: '0 3 * * *'
+    # 06:00 UTC = 09:00 по Москве (К 09:30 сайт точно обновится)
+    - cron: '0 6 * * *'
   workflow_dispatch: # Кнопка для ручного запуска теста
 
 jobs:
@@ -35,4 +35,3 @@ jobs:
           git add data.json
           git diff --quiet && git diff --staged --quiet || git commit -m "Утренняя сводка: Обновление целей и инцидентов"
           git push
-```
