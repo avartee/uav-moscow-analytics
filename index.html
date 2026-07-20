@@ -8,24 +8,18 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { background-color: #0f172a; color: #cbd5e1; }
         .map-container { min-height: 550px; z-index: 10; border: 1px solid #334155; }
-        .pulse-warn {
-            background-color: #f59e0b; width: 14px; height: 14px; border-radius: 50%;
-            border: 2px solid #0f172a; box-shadow: 0 0 10px rgba(245, 158, 11, 0.8);
-            animation: pulse 2s infinite;
-        }
-        .past-hit {
-            background-color: #ef4444; width: 12px; height: 12px; border-radius: 50%;
-            border: 2px solid #0f172a; box-shadow: 0 0 5px rgba(239, 68, 68, 0.8);
-        }
-        @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
-        }
+        
+        /* Цвета точек */
+        .past-hit { background-color: #ef4444; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #0f172a; box-shadow: 0 0 5px rgba(239, 68, 68, 0.8); }
+        .pulse-warn { background-color: #f59e0b; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #0f172a; box-shadow: 0 0 10px rgba(245, 158, 11, 0.8); animation: pulse-orange 2s infinite; }
+        .new-hit { background-color: #3b82f6; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #0f172a; box-shadow: 0 0 12px rgba(59, 130, 246, 0.9); animation: pulse-blue 1.5s infinite; }
+        
+        @keyframes pulse-orange { 0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); } 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); } }
+        @keyframes pulse-blue { 0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.8); } 70% { box-shadow: 0 0 0 12px rgba(59, 130, 246, 0); } 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); } }
+        
         .custom-scroll::-webkit-scrollbar { width: 6px; }
         .custom-scroll::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
@@ -34,79 +28,67 @@
 <body class="font-sans antialiased">
 
 <div class="max-w-7xl mx-auto px-4 py-8">
-    <header class="mb-8 border-b border-slate-700 pb-6 flex justify-between items-end">
-        <div>
-            <h1 class="text-3xl font-bold text-white mb-2 uppercase tracking-wide"><i class="fa-solid fa-shield-halved text-red-600 mr-3"></i>Аналитическая справка ГШ ВС РФ</h1>
-            <p class="text-slate-400 text-lg">Ежедневная авто-сводка. Уровень: Секретно.</p>
-        </div>
-        <div class="text-right text-sm text-slate-500">
-            <p id="update-time">Синхронизация данных...</p>
-        </div>
+    <header class="mb-6 border-b border-slate-700 pb-4">
+        <h1 class="text-3xl font-bold text-white mb-2 uppercase tracking-wide"><i class="fa-solid fa-shield-halved text-red-600 mr-3"></i>Сводка ГШ: БПЛА</h1>
+        <p class="text-slate-400 text-sm" id="last-update">Инициализация...</p>
     </header>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="lg:col-span-2 bg-slate-800 rounded-lg p-2 border border-slate-700">
-            <div id="map" class="map-container rounded bg-slate-900"></div>
-            <div class="flex flex-wrap justify-center gap-6 mt-3 text-xs text-slate-300">
-                <div class="flex items-center"><div class="past-hit mr-2"></div> Инциденты</div>
-                <div class="flex items-center"><div class="pulse-warn mr-2"></div> Вероятные цели</div>
-            </div>
-        </div>
+    <div id="new-alerts-banner" class="hidden mb-8 bg-blue-900/30 border border-blue-500/50 rounded-lg p-5 shadow-[0_0_15px_rgba(59,130,246,0.2)]">
+        <h2 class="text-lg font-bold text-blue-400 mb-3 flex items-center">
+            <span class="bg-blue-500 text-white text-xs px-2 py-1 rounded mr-3 animate-pulse">НОВОЕ ЗА СУТКИ</span>
+            Оперативная информация
+        </h2>
+        <ul id="new-alerts-list" class="space-y-3 text-sm text-slate-300"></ul>
+    </div>
 
-        <div class="bg-slate-800 rounded-lg p-5 border border-slate-700 overflow-y-auto custom-scroll" style="max-height: 600px;">
-            <h3 class="text-lg font-bold mb-3 text-orange-400">Цели с высшим риском (Топ-30)</h3>
-            <p class="text-xs text-slate-400 mb-4">[ИИ-Прогноз] Динамический список целей на основе паттернов.</p>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2">
+            <div id="map" class="map-container rounded bg-slate-900"></div>
+        </div>
+        <div class="bg-slate-800 rounded-lg p-5 border border-slate-700 overflow-y-auto custom-scroll" style="max-height: 550px;">
+            <h3 class="text-lg font-bold mb-3 text-orange-400">ИИ-Прогноз целей</h3>
             <ol id="forecast-list" class="space-y-3 text-sm pr-2"></ol>
         </div>
     </div>
 </div>
 
 <script>
-    // Инициализация карты OSM
-    var map = L.map('map').setView([55.50, 38.00], 7);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap', maxZoom: 19
-    }).addTo(map);
+    var map = L.map('map').setView([55.50, 37.80], 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
-    var pastIcon = L.divIcon({className: 'past-hit', iconSize: [12, 12], iconAnchor: [6, 6]});
-    var forecastIcon = L.divIcon({className: 'pulse-warn', iconSize: [14, 14], iconAnchor: [7, 7]});
-    const listContainer = document.getElementById('forecast-list');
-
-    // АСИНХРОННАЯ ЗАГРУЗКА БАЗЫ ДАННЫХ
-    fetch('data.json')
-        .then(response => {
-            if (!response.ok) throw new Error('Ошибка сети');
-            return response.json();
-        })
+    fetch('data.json?' + new Date().getTime())
+        .then(r => r.json())
         .then(data => {
-            document.getElementById('update-time').innerText = `Последнее обновление базы: Сегодня в 06:30`;
-
-            // Рисуем прошлые инциденты
+            document.getElementById('last-update').innerHTML = `Данные на: <span class="text-white">${new Date().toLocaleString()}</span>`;
+            
+            const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+            const now = new Date();
+            
             data.pastIncidents.forEach(p => {
-                L.marker(p.coords, {icon: pastIcon})
-                 .bindTooltip(`<b>${p.name}</b><br><span style="color:#ef4444;font-size:11px;">Удар: ${p.date}</span>`, {direction: 'top'})
-                 .addTo(map);
+                const addedTime = p.added_at ? new Date(p.added_at) : new Date(0);
+                const isNew = (now - addedTime) <= ONE_DAY_MS;
+                
+                // Рендер маркера
+                const icon = L.divIcon({className: isNew ? 'new-hit' : 'past-hit', iconSize: [16,16], iconAnchor: [8,8]});
+                L.marker(p.coords, {icon: icon}).bindTooltip(p.name).addTo(map);
+
+                // Рендер списка новых
+                if (isNew) {
+                    document.getElementById('new-alerts-banner').classList.remove('hidden');
+                    document.getElementById('new-alerts-list').innerHTML += `
+                        <li class="bg-blue-950/50 p-3 rounded border-l-2 border-blue-500">
+                            <span class="font-bold text-white">${p.name}</span>
+                            <p class="text-xs text-slate-300 mt-1">${p.details || ''}</p>
+                        </li>`;
+                }
             });
 
-            // Рисуем прогнозы и строим список
-            data.forecastTargets.forEach((f, index) => {
-                L.marker(f.coords, {icon: forecastIcon})
-                 .bindTooltip(`<b>${index + 1}. ${f.name}</b><br><span style="color:#f59e0b;font-size:11px;">Риск: Высокий</span>`, {direction: 'top'})
-                 .addTo(map);
-                 
-                let borderClass = index < 10 ? 'border-red-500' : (index < 20 ? 'border-orange-500' : 'border-yellow-600');
-                let rankColor = index < 10 ? 'text-red-400' : (index < 20 ? 'text-orange-400' : 'text-yellow-500');
-
-                listContainer.innerHTML += `
-                    <li class="p-2 bg-slate-700/50 rounded border-l-2 ${borderClass}">
-                        <span class="font-bold text-white"><span class="${rankColor}">${index + 1}.</span> ${f.name}</span><br>
-                        <span class="text-xs text-slate-400">${f.desc}</span>
-                    </li>`;
+            // Рендер прогнозов
+            const list = document.getElementById('forecast-list');
+            data.forecastTargets.forEach((f, i) => {
+                L.marker(f.coords, {icon: L.divIcon({className: 'pulse-warn', iconSize: [14,14], iconAnchor: [7,7]})}).bindTooltip(f.name).addTo(map);
+                list.innerHTML += `<li class="p-2 bg-slate-700/50 rounded border-l-2 border-orange-500 text-xs">${i+1}. ${f.name}</li>`;
             });
-        })
-        .catch(error => {
-            console.error('Ошибка загрузки data.json:', error);
-            listContainer.innerHTML = `<p class="text-red-500">Ошибка подключения к базе данных. Проверьте файл data.json.</p>`;
         });
 </script>
 </body>
